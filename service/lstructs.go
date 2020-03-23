@@ -13,6 +13,17 @@ import (
 	//"fmt"
 )
 
+type Location struct {
+	Priv bool
+	Path []string
+}
+
+type FileReq struct {
+	token []byte
+	Offset int64
+	BlockSize uint64
+}
+
 type Config struct {
 	Username string
 	Password string
@@ -20,6 +31,8 @@ type Config struct {
 	PubHostList map[string]int64
 	PrivHostList map[string]int64
 	MaskList []net.IPNet
+	PublicPath string
+	PrivatePath string
 }
 
 type Service struct {
