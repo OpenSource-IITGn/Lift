@@ -5,28 +5,27 @@ file system related services
 
 package service
 
-//import "net"
 import (
 	"os"
 	"path"
 	"net"
-	"time"
 	"bytes"
+	"io"
 )
 
 const BUFFERSIZE = 4096
 
-// Locates file and make it ready to be transfered
-// Receives token from client for access for file transfer connection
-// Transfers the port for making the connection
-func fileService(sock *socket, config *Config) int {
-	sock.Write([]byte("CONT")])
+// Receive the file path object
+// Return the path
+// Supporting function for file services
+func getFilePath(sock *socket, config *Config) string {
+	sock.Write([]byte("CONT"))
 	filepath := new(Location)
 	sock.ReadObj(filepath)
 	fpath := path.Join(filepath.Path...)
 	if filepath.Priv {
 		if !authenticate(sock, config) {
-			return 0
+			return ""
 		}
 
 		fpath = path.Join(config.PrivatePath, fpath)
@@ -35,13 +34,53 @@ func fileService(sock *socket, config *Config) int {
 		fpath = path.Join(config.PublicPath, fpath)
 	}
 
+	return fpath
+}
+
+func lsService(sock *socket, config *Config) {}
+func hashService(sock *socket, config *Config) {}
+
+
+// Returns the size of the file
+// Returns 0 if there is error
+func sizeService(sock *socket, config *Config) int {
+	fpath := getFilePath(sock, config)
+	if fpath == "" { return 0 }
+
+	// Opening file and reading size
+	file, err := os.Open(fpath)
+	defer file.Close()
+	if err != nil { return 0 }
+
+	sock.Read(64)
+	if sock.err != nil { return 0 }
+
+	if (!bytes.Equal(sock.buf, []byte("CONT"))) {
+		return  0
+	}
+
+	if fi, ferr := file.Stat(); ferr == nil {
+		sock.Write(fi.Size())
+	} else {
+		sock.Write(int64(0))
+	}
+	return 0
+}
+
+// Locates file and make it ready to be transfered
+// Receives token from client for access for file transfer connection
+// Transfers the port for making the connection
+func fileService(sock *socket, config *Config) int {
+	fpath := getFilePath(sock, config)
+	if fpath == "" { return 0 }
+
 	// Receiving the token
 	sock.Read(64)
 
 	if sock.err != nil { return 0 }
 
-	token := []byte
-	copy(token, sock.buf)
+	token := new([]byte)
+	copy(*token, sock.buf)
 
 	if _, err := os.Stat(fpath); err == nil {
 		listen, lerr := net.Listen("tcp", ":0")
@@ -53,7 +92,7 @@ func fileService(sock *socket, config *Config) int {
 		port:= listen.Addr().(*net.TCPAddr).Port
 		sock.Write(port)
 
-		go fileReqHandle(fpath, token, listen)
+		go fileReqHandle(fpath, *token, listen)
 	} else {
 		sock.Write(int(0))
 	}
@@ -65,12 +104,12 @@ func fileService(sock *socket, config *Config) int {
 func fileReqHandle(
 	fpath string,
 	token []byte,
-	listen net.Listen) int {
+	listen net.Listener) int {
 		file, err:= os.Open(fpath)
 		defer file.Close()
 		if err != nil { return 0 }
 
-		listen.SetDeadline(time.Second * 10)
+		// Need to add timeout for Listener
 
 		conn, cerr := listen.Accept()
 
@@ -83,7 +122,7 @@ func fileReqHandle(
 
 		fileReq := new(FileReq)
 
-		sock.Read(fileReq)
+		sock.ReadObj(fileReq)
 
 		if sock.err != nil { return 0 }
 
@@ -95,11 +134,11 @@ func fileReqHandle(
 
 		sendBuffer := make([]byte, BUFFERSIZE)
 
-		sent := uint64(0)
+		sent := 0
 
 		for {
 			if fileReq.BlockSize < BUFFERSIZE {
-				sendBuffer = make([]byte, int(fileReq.BlockSize))
+				sendBuffer = make([]byte, fileReq.BlockSize)
 			}
 
 
@@ -109,7 +148,7 @@ func fileReqHandle(
 			}
 			sock.Write(sendBuffer)
 			if sock.err != nil { return 0 }
-			fileReq.BlockSize = fileReq.BlockSize - sent
+			fileReq.BlockSize = fileReq.BlockSize - uint64(sent)
 		}
 
 	}
