@@ -11,6 +11,9 @@ import (
 	"net"
 	"bytes"
 	"io"
+	//"io/ioutil"
+	"fmt"
+	"time"
 )
 
 const BUFFERSIZE = 4096
@@ -37,7 +40,62 @@ func getFilePath(sock *socket, config *Config) string {
 	return fpath
 }
 
-func lsService(sock *socket, config *Config) {}
+// Client side sending the filepath
+func sendFilePath(sock *socket, config *Config, location Location) bool {
+	sock.Read(64)
+	if sock.err != nil { return false }
+
+	if (!bytes.Equal(sock.buf, []byte("CONT"))) {
+		return  false
+	}
+
+	sock.Write(location)
+	if sock.err != nil {return false}
+
+	if location.Priv {
+		if startAuth(sock, config) { return true }
+	} else {
+		sock.Read(64)
+		if sock.err != nil { return false }
+	}
+
+	if (bytes.Equal(sock.buf, []byte("PASS"))) {
+			return true
+	}
+
+	return false
+
+}
+
+func lsService(sock *socket, config *Config) int {
+	fpath := getFilePath(sock, config)
+	if fpath == "" {return 0}
+
+	sock.Read(64)
+	if sock.err != nil { return 0 }
+
+	if (!bytes.Equal(sock.buf, []byte("CONT"))) {
+		return  0
+	}
+
+	file, _ := os.Open(fpath)
+
+	filelist, err := file.Readdir(0)
+	if err != nil { return 0}
+
+	obj := make(map[string]bool)
+
+	for _,fi := range filelist {
+		obj[fi.Name()] = fi.IsDir()
+	}
+
+	sock.Write(obj)
+
+	return 0
+
+}
+
+
 func hashService(sock *socket, config *Config) {}
 
 
@@ -152,3 +210,34 @@ func fileReqHandle(
 		}
 
 	}
+
+func (serv *Service) GetDir(location Location) int {
+	dial := net.Dialer{Timeout: time.Minute,}
+	conn, err := dial.Dial("tcp",
+		fmt.Sprintf(
+			"%s:%v",
+			serv.Host,
+			(*serv.Config).ComPort),
+		)
+
+	if err != nil { return 0 }
+
+	sock := Gensock(conn)
+	defer sock.Close()
+
+	if !bannerXcng(sock) { return 0 }
+
+	sock.Write([]byte("LIST"))
+
+	if !sendFilePath(sock, serv.Config, location) { return 0 }
+
+	sock.Write([]byte("CONT"))
+	if sock.err!= nil { return 0 }
+
+	serv.Files = make(map[string]bool)
+
+	sock.ReadObj(&serv.Files)
+	//fmt.Println(serv.Files, sock.err)
+
+	return 0
+}

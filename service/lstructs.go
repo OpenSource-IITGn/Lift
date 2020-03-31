@@ -10,7 +10,7 @@ import (
 	"time"
 	"encoding/gob"
 	"bytes"
-	//"fmt"
+	//"os"
 )
 
 type Location struct {
@@ -37,6 +37,12 @@ type Config struct {
 
 type Service struct {
 	Config *Config
+	Host string
+	LPrivDir []string
+	LPubDir []string
+	RPubDir []string
+	RPrivDir []string
+	Files map[string]bool
 }
 
 type socket struct{
