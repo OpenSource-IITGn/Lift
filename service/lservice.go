@@ -36,7 +36,13 @@ func handleClient(conn net.Conn, config *Config) int {
 
 	if bytes.Equal(sock.buf, []byte("HXCNG")){
 		infXcng(sock, config)
-	} else if bytes.Equal(sock.buf, []byte("FILE")){
+	} else if bytes.Equal(sock.buf, []byte("LIST")){
+		lsService(sock, config)
+	} else if bytes.Equal(sock.buf, []byte("FILESZ")) {
+		sizeService(sock, config)
+	} else if bytes.Equal(sock.buf, []byte("FILEH")) {
+		hashService(sock, config)
+	} else if bytes.Equal(sock.buf, []byte("FILE")) {
 		fileService(sock, config)
 	}
 	return 0
