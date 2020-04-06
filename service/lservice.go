@@ -53,7 +53,7 @@ func handleClient(conn net.Conn, config *Config) int {
 This is the remote server started on ComPort
 
 */
-func (serv Service) Lserver() int {
+func (serv *Service) Lserver() int {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%v", (*serv.Config).ComPort))
 	if err != nil {
 		return 0

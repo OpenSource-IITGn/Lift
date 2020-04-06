@@ -19,7 +19,7 @@ type Location struct {
 }
 
 type FileReq struct {
-	token []byte
+	Token []byte
 	Offset int64
 	BlockSize uint64
 }
