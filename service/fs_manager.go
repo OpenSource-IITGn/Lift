@@ -184,7 +184,7 @@ func fileReqHandle(
 
 		if sock.err != nil { return 0 }
 
-		if (!bytes.Equal(sock.buf, fileReq.token)) {
+		if (!bytes.Equal(token, fileReq.Token)) {
 			return 0
 		}
 
@@ -211,21 +211,34 @@ func fileReqHandle(
 
 	}
 
-func (serv *Service) GetDir(location Location) int {
+
+// Client make connection
+func makeConnection(addr string) *socket {
 	dial := net.Dialer{Timeout: time.Minute,}
-	conn, err := dial.Dial("tcp",
+	conn, err := dial.Dial("tcp", addr)
+
+	if err!= nil { return nil }
+
+	sock := Gensock(conn)
+
+	if !bannerXcng(sock) {sock.Close(); return nil }
+
+	return sock
+}
+
+
+// Client side get directory listing
+func (serv *Service) GetDir(location Location) int {
+	sock := makeConnection(
 		fmt.Sprintf(
 			"%s:%v",
 			serv.Host,
 			(*serv.Config).ComPort),
 		)
 
-	if err != nil { return 0 }
+	if sock == nil { return 0 }
 
-	sock := Gensock(conn)
 	defer sock.Close()
-
-	if !bannerXcng(sock) { return 0 }
 
 	sock.Write([]byte("LIST"))
 
@@ -237,7 +250,126 @@ func (serv *Service) GetDir(location Location) int {
 	serv.Files = make(map[string]bool)
 
 	sock.ReadObj(&serv.Files)
-	//fmt.Println(serv.Files, sock.err)
 
 	return 0
+}
+
+/*
+
+Client side file request. This will be split in two parts.
+First will be obtaining size and connection token from server.
+
+This part has to be optimized using the File related services.
+Current implemenation is a simple single connection request.
+
+*/
+
+func (serv *Service) FileServiceReq(location Location) int {
+	sock := makeConnection(
+		fmt.Sprintf(
+			"%s:%v",
+			serv.Host,
+			(*serv.Config).ComPort),
+		)
+
+	if sock == nil { return 0 }
+
+	defer sock.Close()
+
+	sock.Write([]byte("FILESZ"))
+
+	if !sendFilePath(sock, serv.Config, location) { return 0 }
+
+	sock.Write([]byte("CONT"))
+	if sock.err != nil { return 0 }
+
+	var size int64
+
+	sock.ReadObj(&size)
+
+	if size==0 { return 0 }
+
+	sock.Close()
+
+	sock = makeConnection(
+		fmt.Sprintf(
+			"%s:%v",
+			serv.Host,
+			(*serv.Config).ComPort),
+		)
+
+	sock.Write([]byte("FILE"))
+
+	if !sendFilePath(sock, serv.Config, location) { return 0 }
+
+	token := RandStringBytes(6)
+	sock.Write(token)
+	if sock.err != nil { return 0 }
+
+	var port int
+	sock.ReadObj(&port)
+
+	if port == 0 { return 0}
+
+	sock.Close()
+
+	var fpath string
+
+	if location.Priv {
+		fpath = path.Join(serv.LPrivDir...)
+		fpath = path.Join(
+			serv.Config.PrivatePath,
+			fpath,
+			location.Path[len(location.Path)-1],
+		)
+	} else {
+		fpath = path.Join(serv.LPubDir...)
+		fpath = path.Join(
+			serv.Config.PublicPath,
+			fpath,
+			location.Path[len(location.Path)-1],
+		)
+	}
+
+	file, err := os.OpenFile(fpath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0774)
+	if err!= nil { return 0 }
+	defer file.Close()
+
+	conn, err := net.DialTimeout(
+		"tcp",
+		fmt.Sprintf("%s:%v", serv.Host, port,),
+		time.Millisecond * 300,
+	)
+
+	if err != nil { return 0 }
+
+	sock = Gensock(conn)
+
+	fileReq := FileReq{
+		Token: token,
+		Offset: 0,
+		BlockSize: uint64(size),
+	}
+
+	sock.Write(fileReq)
+	if sock.err != nil { return 0 }
+
+	recvBuffer := make([]byte, BUFFERSIZE)
+
+	recv := 0
+
+	for {
+		if size < BUFFERSIZE {
+			recvBuffer = make([]byte, size)
+		}
+		if size==0 {
+			return 0
+		}
+
+		sock.ReadObj(&recvBuffer)
+		if sock.err != nil { return 0 }
+		recv, err = file.Write(recvBuffer)
+		if err!= nil { return 0 }
+		size = size - int64(recv)
+	}
 }

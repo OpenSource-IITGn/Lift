@@ -38,7 +38,7 @@ func main(){
 
 	//go serv.HostRenewal()
 
-	go serv.Lserver()
+	go (&serv).Lserver()
 
 	in := bufio.NewReader(os.Stdin)
 

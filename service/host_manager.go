@@ -179,7 +179,7 @@ func checkHostValid(host string, maskList []net.IPNet) bool {
 }
 
 // Renewing Host List
-func (serv Service) HostRenewal() {
+func (serv *Service) HostRenewal() {
 	// FOR TESTING
 	time.Sleep(time.Second * 10)
 	// Public list iteration
